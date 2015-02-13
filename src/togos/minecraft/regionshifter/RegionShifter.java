@@ -9,13 +9,17 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.jnbt.CompoundTag;
+import org.jnbt.DoubleTag;
 import org.jnbt.IntTag;
+import org.jnbt.ListTag;
 import org.jnbt.NBTInputStream;
 import org.jnbt.NBTOutputStream;
+import org.jnbt.StringTag;
 import org.jnbt.Tag;
 
 public class RegionShifter
@@ -25,13 +29,55 @@ public class RegionShifter
 	static class ShiftJob {
 		public final File inFile;
 		public final File outFile;
-		public final int destRX, destRZ;
-		public ShiftJob( File inFile, File outFile, int destRX, int destRZ ) {
+		public final long shiftX, shiftZ;
+		public final boolean generateNewUuids;
+		public ShiftJob( File inFile, File outFile, long shiftX, long shiftZ, boolean generateNewUuids ) {
+			if( ((shiftX | shiftZ) & 0x1FF) != 0 ) {
+				throw new RuntimeException("Shift amount must be a multiple of 512; given "+shiftX+","+shiftZ); 
+			}
 			this.inFile = inFile;
 			this.outFile = outFile;
-			this.destRX = destRX;
-			this.destRZ = destRZ;
+			this.shiftX = shiftX;
+			this.shiftZ = shiftZ;
+			this.generateNewUuids = generateNewUuids;
 		}
+		public int getShiftCX() { return (int)(shiftX >> 4); }
+		public int getShiftCZ() { return (int)(shiftZ >> 4); }
+		public int getShiftRX() { return (int)(shiftX >> 9); }
+		public int getShiftRZ() { return (int)(shiftZ >> 9); }
+	}
+	
+	// Add entries from 'from' into 'into' for keys not already existing in 'into'
+	protected static <X,Y> void merge( Map<X,Y> from, Map<X,Y> into ) {
+		for( Map.Entry<X,Y> e : from.entrySet() ) {
+			if( !into.containsKey(e.getKey()) ) {
+				into.put(e.getKey(), e.getValue());
+			}
+		}
+	}
+	
+	protected static ListTag<DoubleTag> rewriteEntityPosition(ListTag<DoubleTag> oldPos, long shiftX, long shiftY, long shiftZ) {
+		ArrayList<DoubleTag> newPos = new ArrayList<DoubleTag>();
+		newPos.add(new DoubleTag(oldPos.getValue().get(0).getName(), oldPos.getValue().get(0).getValue() + shiftX));
+		newPos.add(new DoubleTag(oldPos.getValue().get(1).getName(), oldPos.getValue().get(1).getValue() + shiftY));
+		newPos.add(new DoubleTag(oldPos.getValue().get(2).getName(), oldPos.getValue().get(2).getValue() + shiftZ));
+		return new ListTag<DoubleTag>("Pos", DoubleTag.class, newPos);
+	}
+	
+	protected static ListTag<CompoundTag> rewriteEntities(ListTag<CompoundTag> oldEntities, long shiftX, long shiftY, long shiftZ, boolean generateNewUuid) {
+		List<CompoundTag> newEntities = new ArrayList<CompoundTag>();
+		for( CompoundTag entity : oldEntities.getValue() ) {
+			Map<String,Tag> newValues = new LinkedHashMap<String,Tag>();
+			@SuppressWarnings("unchecked")
+			ListTag<DoubleTag> oldPos = (ListTag<DoubleTag>)entity.getValue().get("Pos");
+			newValues.put("Pos", rewriteEntityPosition(oldPos, shiftX, shiftY, shiftZ));
+			if( generateNewUuid ) {
+				newValues.put("UUID", new StringTag("UUID", UUID.randomUUID().toString()));
+			}
+			merge( entity.getValue(), newValues );
+			newEntities.add(new CompoundTag(entity.getName(), newValues));
+		}
+		return new ListTag<CompoundTag>("Entities", CompoundTag.class, newEntities);
 	}
 	
 	protected static void shift(ShiftJob job) throws IOException {
@@ -60,16 +106,16 @@ public class RegionShifter
 				// Transform!
 				
 				Map<String, Tag> rewrittenLevelTagValues = new LinkedHashMap<String,Tag>();
-				rewrittenLevelTagValues.put("xPos", new IntTag("xPos", cx + job.destRX*32));
-				rewrittenLevelTagValues.put("zPos", new IntTag("zPos", cz + job.destRZ*32));
-				for( Map.Entry<String,Tag> entry : levelTag.getValue().entrySet() ) {
-					if( "xPos".equals(entry.getKey()) || "zPos".equals(entry.getKey()) ) {
-						System.err.println(job.inFile+" "+cx+","+cz+" "+entry.getKey()+" = "+entry.getValue());
-					} else {
-						rewrittenLevelTagValues.put(entry.getKey(), entry.getValue());
-					}
-				}
-				System.err.println("-> "+(cx + job.destRX*32) + ","+(cz + job.destRZ*32));
+				int oldXPos = ((IntTag)levelTag.getValue().get("xPos")).getValue();
+				int oldZPos = ((IntTag)levelTag.getValue().get("zPos")).getValue();
+				
+				@SuppressWarnings("unchecked")
+				ListTag<CompoundTag> oldEntities = (ListTag<CompoundTag>)levelTag.getValue().get("Entities");
+				rewrittenLevelTagValues.put("Entities", rewriteEntities(oldEntities, job.shiftX, 0, job.shiftZ, false));
+				rewrittenLevelTagValues.put("xPos", new IntTag("xPos", oldXPos + job.getShiftCX()));
+				rewrittenLevelTagValues.put("zPos", new IntTag("zPos", oldZPos + job.getShiftCZ()));
+				merge( levelTag.getValue(), rewrittenLevelTagValues );
+				
 				CompoundTag rewrittenLevelTag = new CompoundTag("Level", rewrittenLevelTagValues);
 				HashMap<String,Tag> rewrittenRootTagValues = new HashMap<String,Tag>();
 				rewrittenRootTagValues.put("Level",rewrittenLevelTag);
@@ -98,9 +144,10 @@ public class RegionShifter
 		int
 			x0 = Integer.MIN_VALUE, z0 = Integer.MIN_VALUE,
 			x1 = Integer.MAX_VALUE, z1 = Integer.MAX_VALUE;
-		int shiftX = 0, shiftZ = 0;
+		int shiftRX = 0, shiftRZ = 0;
 		int debugLevel = 0;
 		ConflictResolutionMode conflictResolutionMode = ConflictResolutionMode.ERROR;
+		boolean generateNewUuids = true;
 		
 		for( int i=0; i<args.length; ++i ) {
 			if( "-o".equals(args[i]) ) {
@@ -121,8 +168,8 @@ public class RegionShifter
 					System.err.println("Error: Expected 2 comma-separated integers for shift; got '"+args[i]+"'");
 					System.exit(1);
 				}
-				shiftX = Integer.parseInt(s[0]);
-				shiftZ = Integer.parseInt(s[1]);
+				shiftRX = Integer.parseInt(s[0]);
+				shiftRZ = Integer.parseInt(s[1]);
 			} else if( "-keep".equals(args[i]) ) {
 				conflictResolutionMode = ConflictResolutionMode.KEEP;
 			} else if( "-clobber".equals(args[i]) ) {
@@ -133,6 +180,8 @@ public class RegionShifter
 				debugLevel = 1;
 			} else if( "-vv".equals(args[i]) ) {
 				debugLevel = 2;
+			} else if( "-keep-entity-uuids".equals(args[i]) ) {
+				generateNewUuids = false;
 			} else if( args[i].charAt(0) != '-' ) {
 				inDir = new File(args[i]);
 			} else {
@@ -148,6 +197,9 @@ public class RegionShifter
 			System.err.println("Error: No output directory specified");
 			System.exit(1);
 		}
+		
+		long shiftX = (long)shiftRX * 512;
+		long shiftZ = (long)shiftRZ * 512;
 		
 		int outfieldRegionCount = 0;
 		List<ShiftJob> jobs = new ArrayList<ShiftJob>();
@@ -166,9 +218,9 @@ public class RegionShifter
 					continue;
 				}
 				File inRegionFile = new File(inDir, r);
-				int destRX = (rx+shiftX), destRZ = (rz+shiftZ);
+				int destRX = (rx+shiftRX), destRZ = (rz+shiftRZ);
 				File outRegionFile = new File(outDir, "r."+destRX+"."+destRZ+".mca");
-				jobs.add(new ShiftJob(inRegionFile, outRegionFile, destRX, destRZ));
+				jobs.add(new ShiftJob(inRegionFile, outRegionFile, shiftX, shiftZ, generateNewUuids));
 			}
 		}
 		
