@@ -20,5 +20,6 @@ Consistently work at chunk granularity:
 
 - -error-on-conflict shouldn't trigger unless there is overlapping chunk
   data within overlapping regions.
+- -keep should still write into existing region files where chunks are missing.
 
-- Allow -bounds to be specified in chunks instead of regions
+- Allow -bounds to be specified in chunks instead of regions.
