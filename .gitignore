@@ -1,4 +1,6 @@
 *~
 .classpath
 .project
+.src.lst
 bin
+TMCRS.jar
