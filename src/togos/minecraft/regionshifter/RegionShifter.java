@@ -138,7 +138,30 @@ public class RegionShifter
 		ERROR
 	};
 	
-	public static void main(String[] args) {
+	protected static final String USAGE =
+		"Usage: tmcrs [options] -o <output-region-directory> <input-region-directory>\n" +
+		"Options:\n"+
+		"  -o <dir>       ; specify output region directory\n" +
+		"  -shift <x>,<y> ; amount to shift input by (in region widths)\n" +
+		"  -bounds <x0>,<y0>,<x1>,<y1> ; limit input regions shifted to this rectangle,\n" +
+		"                 ; specified in corner coordinates (so \"0,0,1,1\" limits\n" +
+		"                 ; to the region 'r.0.0.mca')\n" +
+		"  -keep          ; keep existing terrain\n" +
+		"  -clobber       ; overwrite existing terrain\n" +
+		"  -error-on-conflict ; abort if any new terrain would overwrite existing\n" +
+		"  -v             ; talk a bit\n" +
+		"  -vv            ; talk more\n" +
+		"  -keep-entity-uuids ; Do not regenerate entity UUIDs";
+		
+	protected static int dieUsageError(String message) {
+		System.err.println("Error: "+message+"\n"+"Run with -? for usage information");
+		return 1;
+	}
+	protected static int dieError(String message) {
+		return dieUsageError(message);
+	}
+		
+	protected static int _main(String[] args) {
 		File inDir  = null;
 		File outDir = null;
 		int
@@ -155,8 +178,7 @@ public class RegionShifter
 			} else if( "-bounds".equals(args[i]) ) {
 				String[] b = args[++i].split(",");
 				if( b.length != 4 ) {
-					System.err.println("Error: Expected 4 comma-separated integers for bounds; got '"+args[i]+"'");
-					System.exit(1);
+					return dieUsageError("Expected 4 comma-separated integers for bounds; got '"+args[i]+"'");
 				}
 				x0 = Integer.parseInt(b[0]);
 				z0 = Integer.parseInt(b[1]);
@@ -165,8 +187,7 @@ public class RegionShifter
 			} else if( "-shift".equals(args[i]) ) {
 				String[] s = args[++i].split(",");
 				if( s.length != 2 ) {
-					System.err.println("Error: Expected 2 comma-separated integers for shift; got '"+args[i]+"'");
-					System.exit(1);
+					return dieUsageError("Expected 2 comma-separated integers for shift; got '"+args[i]+"'");
 				}
 				shiftRX = Integer.parseInt(s[0]);
 				shiftRZ = Integer.parseInt(s[1]);
@@ -182,20 +203,24 @@ public class RegionShifter
 				debugLevel = 2;
 			} else if( "-keep-entity-uuids".equals(args[i]) ) {
 				generateNewUuids = false;
+			} else if( "-?".equals(args[i]) || "-h".equals(args[i]) || "--help".equals(args[i]) ) {
+				System.out.println(USAGE);
+				return 0;
 			} else if( args[i].charAt(0) != '-' ) {
+				if( inDir != null ) {
+					return dieUsageError("More than one input directory specified: '"+inDir+"', '"+args[i]+"'");
+				}
 				inDir = new File(args[i]);
 			} else {
-				System.err.println("Error: Unrecognized argument: '"+args[i]+"'");
+				return dieUsageError("Unrecognized argument: '"+args[i]+"'");
 			}
 		}
 		
 		if( inDir == null ) {
-			System.err.println("Error: No input directory specified");
-			System.exit(1);
+			return dieUsageError("No input directory specified");
 		}
 		if( outDir == null ) {
-			System.err.println("Error: No output directory specified");
-			System.exit(1);
+			return dieUsageError("No output directory specified");
 		}
 		
 		long shiftX = (long)shiftRX * 512;
@@ -257,8 +282,7 @@ public class RegionShifter
 				shift(job);
 			} catch( IOException e ) {
 				e.printStackTrace();
-				System.err.println("Exception occured when shifting "+job.inFile+" to "+job.outFile);
-				System.exit(1);
+				dieError("Exception occured when shifting "+job.inFile+" to "+job.outFile);
 			}
 			
 			if( debugLevel >= 1 ) {
@@ -273,5 +297,11 @@ public class RegionShifter
 			System.err.println(outfieldRegionCount+" regions ignored due to being outside bounds");
 			System.err.println(preexistingRegionCount+" regions ignored because they already existed in the output directory");
 		}
+		
+		return 0;
+	}
+	
+	public static void main(String[] args) {
+		System.exit(_main(args));
 	}
 }
