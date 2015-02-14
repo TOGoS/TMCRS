@@ -15,10 +15,6 @@ I've been able to clear them up by moving far away and then coming back.
 
 ## To-do
 
-Generate new entity UUIDs correctly.
-According to the wiki, UUID is ignored if UUIDMost and UUIDLeast are already present.
-Need to either remove those, or, better yet, just overwrite them.
-
 Consistently work at chunk granularity:
 
 - -error-on-conflict shouldn't trigger unless there is overlapping chunk

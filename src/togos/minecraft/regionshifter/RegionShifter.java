@@ -17,9 +17,9 @@ import org.jnbt.CompoundTag;
 import org.jnbt.DoubleTag;
 import org.jnbt.IntTag;
 import org.jnbt.ListTag;
+import org.jnbt.LongTag;
 import org.jnbt.NBTInputStream;
 import org.jnbt.NBTOutputStream;
-import org.jnbt.StringTag;
 import org.jnbt.Tag;
 
 public class RegionShifter
@@ -72,7 +72,9 @@ public class RegionShifter
 			ListTag<DoubleTag> oldPos = (ListTag<DoubleTag>)entity.getValue().get("Pos");
 			newValues.put("Pos", rewriteEntityPosition(oldPos, shiftX, shiftY, shiftZ));
 			if( generateNewUuid ) {
-				newValues.put("UUID", new StringTag("UUID", UUID.randomUUID().toString()));
+				UUID newUuid = UUID.randomUUID();
+				newValues.put("UUIDMost" , new LongTag("UUIDMost" , newUuid.getMostSignificantBits() ));
+				newValues.put("UUIDLeast", new LongTag("UUIDLeast", newUuid.getLeastSignificantBits()));
 			}
 			merge( entity.getValue(), newValues );
 			newEntities.add(new CompoundTag(entity.getName(), newValues));
