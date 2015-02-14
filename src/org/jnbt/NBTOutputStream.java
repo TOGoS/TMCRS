@@ -133,7 +133,7 @@ public final class NBTOutputStream implements Closeable {
 			writeStringTagPayload((StringTag) tag);
 			break;
 		case NBTConstants.TYPE_LIST:
-			writeListTagPayload((ListTag<Tag>) tag);
+			writeListTagPayload((ListTag<?>) tag);
 			break;
 		case NBTConstants.TYPE_COMPOUND:
 			writeCompoundTagPayload((CompoundTag) tag);
