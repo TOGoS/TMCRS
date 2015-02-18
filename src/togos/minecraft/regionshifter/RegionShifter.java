@@ -224,6 +224,12 @@ public class RegionShifter
 		if( outDir == null ) {
 			return dieUsageError("No output directory specified");
 		}
+		if( !inDir.exists() ) {
+			return dieUsageError("Input directory '"+inDir+"' does not exist.");
+		}
+		if( !inDir.isDirectory() ) {
+			return dieUsageError("Input '"+inDir+"' is not a directory.");
+		}
 		
 		long shiftX = (long)shiftRX * 512;
 		long shiftZ = (long)shiftRZ * 512;
@@ -232,6 +238,9 @@ public class RegionShifter
 		List<ShiftJob> jobs = new ArrayList<ShiftJob>();
 		
 		String[] regionFiles = inDir.list();
+		if( regionFiles == null ) {
+			return dieError("Failed to load directory listing from '"+inDir+"'.");
+		}
 		Matcher m;
 		for( String r : regionFiles ) {
 			if( (m = R.matcher(r)).matches() ) {
